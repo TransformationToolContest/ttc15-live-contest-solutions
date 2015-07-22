@@ -1,0 +1,16 @@
+ttc15/tranj/examples/FinalURLDownload.class
+ttc15/tranj/examples/SynthesizedURLDownload.class
+ttc15/tranj/Main.class
+ttc15/tranj/processors/UtilFactory.class
+ttc15/tranj/examples/URLDownloadWithLogging.class
+ttc15/tranj/examples/URLDownloadWithRetry.class
+ttc15/tranj/processors/RetryProcessor.class
+ttc15/tranj/examples/URLDownload.class
+ttc15/tranj/processors/LoggingProcessor.class
+ttc15/tranj/annotation/Loggable.class
+ttc15/tranj/processors/CacheProcessor.class
+ttc15/tranj/examples/URLDownloadWithCache.class
+ttc15/tranj/annotation/Cacheable.class
+ttc15/tranj/annotation/RetryOnFailure.class
+ttc15/tranj/examples/ManualURLDownload.class
+ttc15/tranj/Commander.class
