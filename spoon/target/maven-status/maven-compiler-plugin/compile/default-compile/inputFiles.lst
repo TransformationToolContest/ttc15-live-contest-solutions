@@ -1,0 +1,16 @@
+/Users/gerard/Documents/workspace/ttc15-live-contest/src/ttc15-tranj/src/main/java/ttc15/tranj/examples/URLDownloadWithCache.java
+/Users/gerard/Documents/workspace/ttc15-live-contest/src/ttc15-tranj/src/main/java/ttc15/tranj/processors/LoggingProcessor.java
+/Users/gerard/Documents/workspace/ttc15-live-contest/src/ttc15-tranj/src/main/java/ttc15/tranj/examples/SynthesizedURLDownload.java
+/Users/gerard/Documents/workspace/ttc15-live-contest/src/ttc15-tranj/src/main/java/ttc15/tranj/processors/UtilFactory.java
+/Users/gerard/Documents/workspace/ttc15-live-contest/src/ttc15-tranj/src/main/java/ttc15/tranj/annotation/Loggable.java
+/Users/gerard/Documents/workspace/ttc15-live-contest/src/ttc15-tranj/src/main/java/ttc15/tranj/examples/URLDownloadWithLogging.java
+/Users/gerard/Documents/workspace/ttc15-live-contest/src/ttc15-tranj/src/main/java/ttc15/tranj/examples/URLDownload.java
+/Users/gerard/Documents/workspace/ttc15-live-contest/src/ttc15-tranj/src/main/java/ttc15/tranj/examples/FinalURLDownload.java
+/Users/gerard/Documents/workspace/ttc15-live-contest/src/ttc15-tranj/src/main/java/ttc15/tranj/Main.java
+/Users/gerard/Documents/workspace/ttc15-live-contest/src/ttc15-tranj/src/main/java/ttc15/tranj/annotation/Cacheable.java
+/Users/gerard/Documents/workspace/ttc15-live-contest/src/ttc15-tranj/src/main/java/ttc15/tranj/processors/CacheProcessor.java
+/Users/gerard/Documents/workspace/ttc15-live-contest/src/ttc15-tranj/src/main/java/ttc15/tranj/processors/RetryProcessor.java
+/Users/gerard/Documents/workspace/ttc15-live-contest/src/ttc15-tranj/src/main/java/ttc15/tranj/annotation/RetryOnFailure.java
+/Users/gerard/Documents/workspace/ttc15-live-contest/src/ttc15-tranj/src/main/java/ttc15/tranj/examples/URLDownloadWithRetry.java
+/Users/gerard/Documents/workspace/ttc15-live-contest/src/ttc15-tranj/src/main/java/ttc15/tranj/examples/ManualURLDownload.java
+/Users/gerard/Documents/workspace/ttc15-live-contest/src/ttc15-tranj/src/main/java/ttc15/tranj/Commander.java
