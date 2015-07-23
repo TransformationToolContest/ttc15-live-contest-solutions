@@ -1,0 +1,395 @@
+-- @atlcompiler atl2010
+-- @path Java=/ttc15-live-contest-atl/models/java.ecore
+-- Authors: Massimo Tisi & Frédéric Jouault
+module Logging;
+create OUT : Java refining IN : Java;
+
+helper context Java!Method def: logging : Java!AnnotationInstance =
+	self.annotationsAndModifiers->select(e |
+		e.oclIsKindOf(Java!AnnotationInstance)
+	)->select(e |
+		e.annotation.name = 'Loggable'
+	)->first();
+
+helper context Java!Method def: isLogging : Boolean =
+	self.annotationsAndModifiers->select(e |
+		e.oclIsKindOf(Java!AnnotationInstance)
+	)->collect(e |
+		e.annotation.name = 'Loggable'
+	)->append(false)->first();
+
+rule AddLoggerToMethod {
+	from
+		s : Java!Method (
+			s.isLogging
+		)
+	using {
+			system : Java!Classifer = 'java.lang.System'.javaClass;
+			fields : Sequence(Java!Field) = s.refImmediateComposite().members->select(m | m.oclIsKindOf(Java!Field));
+	}
+	to
+		t : Java!Method (
+--			name <- s.name + '_renamed',
+			annotationsAndModifiers <:= s.annotationsAndModifiers->excluding(s.logging),
+			statements <:=
+					s.statements->prepend(entryTimeS)
+		),
+			entryTimeS : Java!LocalVariableStatement (
+				variable <- entryTimeV
+			),
+				entryTimeV : Java!LocalVariable (
+					name <- '__entryTime',
+					typeReference <- longType,
+					initialValue <- ir
+				),
+					longType : Java!Long,
+					ir : Java!IdentifierReference (
+						target <- system,
+						next <- mc
+					),
+						mc : Java!MethodCall (
+							target <- system.getMethod('currentTimeMillis')
+						)
+}
+
+helper context Java!AnnotationInstance def: getParam(name : String, default : Boolean) : Boolean =
+	if self.parameter.oclIsUndefined() then
+		default
+	else
+		let param : Java!AnnotationParameter = self.parameter.settings->any(e |
+			e.attribute.name = name
+		) in
+		if param.oclIsUndefined() then
+			default
+		else
+			param.value.value
+		endif
+	endif;
+
+rule AddEntryLoggingToMethod extends AddLoggerToMethod {
+	from
+		s : Java!Method (
+			s.logging.getParam('entry', true)
+		)
+	to
+		t : Java!Method (
+			statements <:=
+					s.statements->prepend(ifS)->prepend(entryTimeS)
+		),
+			ifS : Java!Condition (
+				statement <- ifB,
+				condition <- ifC
+			),
+				ifB : Java!Block (
+					name <- 'Block',
+					statements <- ifES
+				),
+					ifES : Java!ExpressionStatement (
+						expression <- ifIR
+					),
+						ifIR : Java!IdentifierReference (
+							target <- thisModule.resolveTemp(s.refImmediateComposite(), 'loggerF'),
+							next <- ifMC
+						),
+							ifMC : Java!MethodCall (
+								target <- 'org.slf4j.Logger'.javaClass.getMethod('trace'),
+								arguments <- ifIR2 
+							),
+								ifIR2 : Java!IdentifierReference (
+									target <- 'java.lang.String'.javaClass,
+									next <- ifMC2
+								),
+									ifMC2 : Java!MethodCall (
+										target <- 'java.lang.String'.javaClass.getMethod('format'),
+										arguments <- Sequence{ifString}->union(fields->collect(e |
+											Java!IdentifierReference.newInstance().refSetValue('target', e)
+										))
+									),
+										ifString : Java!StringReference (
+											value <- s.name.concat('() [').concat(
+												fields->collect(f | f.name.concat('=\'%s\' '))->flatten()->sum()
+											).concat(']: entry')
+										),
+				ifC : Java!IdentifierReference (
+					target <- thisModule.resolveTemp(s.refImmediateComposite(), 'loggerF'),
+					next <- ifMC3
+				),
+					ifMC3 : Java!MethodCall (
+						target <- 'org.slf4j.Logger'.javaClass.getMethod('isTraceEnabled')
+					)
+
+--		packageRef : Java!PackageReference  (
+--			name <- 'org',
+--			subpackages <- packageRefS
+--		),
+--			packageRefS : Java!PackageReference (
+--				name <- 'slf4j'
+--			)
+}
+
+rule UpdateClass {
+	from
+		s : Java!Class (
+			s.members->select(m | m.oclIsKindOf(Java!Method))->exists(m | m.isLogging)
+		)
+	using {
+			loggerFactory : Java!Classifer = 'org.slf4j.LoggerFactory'.javaClass;
+	}
+	to
+		t : Java!Class (
+			members <- loggerF
+		),
+		loggerF : Java!Field (
+			name <- '__logger',
+			initialValue <- loggerIRorg,
+			typeReference <- loggerTR,
+			annotationsAndModifiers <- Sequence {privateModifier1, finalModifier1}
+		),
+			privateModifier1 : Java!Private,
+			finalModifier1 : Java!Final,
+			loggerIRorg : Java!IdentifierReference (
+				target <- org,
+				next <- loggerIRslf4j
+			),
+				loggerIRslf4j : Java!IdentifierReference (
+					target <- slf4j,
+					next <- loggerIRC
+				),
+				org : Java!PackageReference (
+					name <- 'org',
+					subpackages <- slf4j
+				),
+					slf4j : Java!PackageReference (
+						name <- 'slf4j'
+					),
+				loggerIRC : Java!IdentifierReference (
+					target <- loggerFactory,
+					next <- loggerMC
+				),
+					loggerMC : Java!MethodCall (
+						target <- loggerFactory.getMethod('getLogger'),
+						arguments <- loggerIR2
+					),
+						loggerIR2 : Java!IdentifierReference (
+							next <- loggerRCR,
+							target <- s
+						),
+							loggerRCR : Java!ReflectiveClassReference (),
+			loggerTR : Java!NamespaceClassifierReference (
+				namespaces <- Sequence {'org', 'slf4j'},
+				classifierReferences <- loggerCR
+			),
+				loggerCR : Java!ClassifierReference (
+					target <- 'org.slf4j.Logger'.javaClass
+				)
+				
+}
+
+helper context Java!Method def: hasExitLogging : Boolean =
+	if self.isLogging then
+		self.logging.getParam('exit', true)
+	else
+		false
+	endif;
+
+helper context Java!StatementListContainer def: hasExitLoggingAndReturn : Boolean =
+	if self.method.oclIsUndefined() then
+		false
+	else if self.method.hasExitLogging then
+		not self.return.oclIsUndefined()
+	else
+		false
+	endif endif;
+
+rule Return {
+	from
+		s : Java!Return (s.method.hasExitLogging)
+	to
+		t : Java!Return,
+			ifS : Java!Condition (
+				statement <- ifB,
+				condition <- ifC
+			),
+				ifB : Java!Block (
+					name <- 'Block',
+					statements <- ifES
+				),
+					ifES : Java!ExpressionStatement (
+						expression <- ifIR
+					),
+						ifIR : Java!IdentifierReference (
+							target <- thisModule.resolveTemp(s.method.refImmediateComposite(), 'loggerF'),
+							next <- ifMC
+						),
+							ifMC : Java!MethodCall (
+								target <- 'org.slf4j.Logger'.javaClass.getMethod('trace'),
+								arguments <- ifIR2 
+							),
+								ifIR2 : Java!IdentifierReference (
+									target <- 'java.lang.String'.javaClass,
+									next <- ifMC2
+								),
+									ifMC2 : Java!MethodCall (
+										target <- 'java.lang.String'.javaClass.getMethod('format'),
+										arguments <- Sequence{ifString, addExp}
+									),
+										ifString : Java!StringReference (
+											value <- s.method.name.concat('() [%d ms]: exit')
+										),
+											addExp : Java!AdditiveExpression(
+												additiveOperators <- addOps,
+												children <- Sequence {idenRef, idenRef2}
+											),
+												addOps : Java!Subtraction,
+												idenRef : Java!IdentifierReference(
+													target <- 'java.lang.System'.javaClass,
+													next <- methCall
+												),
+													methCall : Java!MethodCall(
+														target <- 'java.lang.System'.javaClass.getMethod('currentTimeMillis')
+													),
+												idenRef2 : Java!IdentifierReference(
+													target <- thisModule.resolveTemp(s.method,	'entryTimeV')
+												),
+				ifC : Java!IdentifierReference (
+					target <- thisModule.resolveTemp(s.method.refImmediateComposite(), 'loggerF'),
+					next <- ifMC3
+				),
+					ifMC3 : Java!MethodCall (
+						target <- 'org.slf4j.Logger'.javaClass.getMethod('isTraceEnabled')
+					)
+}
+
+rule BlockWithReturnToCache {
+	from
+		s : Java!StatementListContainer (
+			s.hasExitLoggingAndReturn and
+			if s.oclIsKindOf(Java!CatchBlock) then
+				not s.parameter.hasExceptionLogging
+			else
+				false
+			endif
+		)
+	using {
+		returnIndex : Integer = s.statements->indexOf(s.return);
+	}
+	to
+		t : Java!StatementListContainer (
+			-- Remark: there can be only one reachable return statement in a given block, and whatever comes after is unreachable
+			statements <:= s.statements.subSequence(1, returnIndex - 1)
+								->append(thisModule.resolveTemp(s.return, 'ifS'))
+								->union(s.statements.subSequence(returnIndex, s.statements->size()))
+		)
+}
+
+rule BlockWithReturnToCacheAndException {
+	from
+		s : Java!CatchBlock (
+			s.hasExitLoggingAndReturn and s.parameter.hasExceptionLogging
+		)
+	using {
+		returnIndex : Integer = s.statements->indexOf(s.return);
+	}
+	to
+		t : Java!CatchBlock (
+			-- Remark: there can be only one reachable return statement in a given block, and whatever comes after is unreachable
+			statements <:= s.statements.subSequence(1, returnIndex - 1)->prepend(thisModule.resolveTemp(s.parameter, 'ifS'))
+								->append(thisModule.resolveTemp(s.return, 'ifS'))
+								->union(s.statements.subSequence(returnIndex, s.statements->size()))
+		)
+}
+
+rule CatchBlock {
+	from
+		s : Java!CatchBlock (
+			(not s.hasExitLoggingAndReturn) and s.parameter.hasExceptionLogging 
+		)
+	to
+		t : Java!CatchBlock (
+			statements <:= s.statements->prepend(thisModule.resolveTemp(s.parameter, 'ifS'))
+		)
+}
+
+helper context Java!OrdinaryParameter def: hasExceptionLogging : Boolean =
+	if self.method.oclIsUndefined() then
+		false
+	else if self.method.isLogging then
+		self.method.logging.getParam('exceptions', true) and self.refImmediateComposite().oclIsKindOf(Java!CatchBlock)
+	else
+		false
+	endif endif;
+
+rule CatchParameter {
+	from
+		s : Java!OrdinaryParameter (
+			s.hasExceptionLogging
+		)
+	to
+		t : Java!OrdinaryParameter,
+			ifS : Java!Condition (
+				statement <- ifB,
+				condition <- ifC
+			),
+				ifB : Java!Block (
+					name <- 'Block',
+					statements <- ifES
+				),
+					ifES : Java!ExpressionStatement (
+						expression <- ifIR
+					),
+						ifIR : Java!IdentifierReference (
+							target <- thisModule.resolveTemp(s.method.refImmediateComposite(), 'loggerF'),
+							next <- ifMC
+						),
+							ifMC : Java!MethodCall (
+								target <- 'org.slf4j.Logger'.javaClass.getMethod('error'),
+								arguments <- ifIR2 
+							),
+								ifIR2 : Java!IdentifierReference (
+									target <- 'java.lang.String'.javaClass,
+									next <- ifMC2
+								),
+									ifMC2 : Java!MethodCall (
+										target <- 'java.lang.String'.javaClass.getMethod('format'),
+										arguments <- Sequence{ifString}
+									),
+										ifString : Java!StringReference (
+											value <- s.method.name.concat('(): exception')
+										),
+				ifC : Java!IdentifierReference (
+					target <- thisModule.resolveTemp(s.method.refImmediateComposite(), 'loggerF'),
+					next <- ifMC3
+				),
+					ifMC3 : Java!MethodCall (
+						target <- 'org.slf4j.Logger'.javaClass.getMethod('isTraceEnabled')
+					)
+}
+
+-- Utils
+helper context String def: javaClass : Java!Classifier =
+	Java!CompilationUnit.allInstancesFrom('IN')->any(e |
+		e.name = self + '.java'
+	).classifiers->first();
+
+helper context Java!Classifier def: getMethod(name : String) : Java!Method =
+	self.members->select(e |
+		e.oclIsKindOf(Java!Method)
+	)->any(e |
+		e.name = name
+	);
+
+-- actual context: Java!Statement or Java!CatchBlock or...
+helper context OclAny def: method : Java!Method =
+	if self.oclIsKindOf(Java!Method) then
+		self
+	else
+		let parent : OclAny = self.refImmediateComposite() in
+		if parent.oclIsUndefined() then
+			OclUndefined
+		else
+			parent.method
+		endif
+	endif;
+
+helper context Java!StatementListContainer def: return : Java!Return =
+	self.statements->select(e | e.oclIsKindOf(Java!Return))->first();

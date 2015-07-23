@@ -1,0 +1,226 @@
+-- authors: Alexander Bergmayr, Manuel Wimmer, Lorenzo Addazi
+
+-- @atlcompiler atl2010
+-- @path Java=/ttc15-live-contest-atl/models/java.ecore
+module RetryOnFailure;
+create OUT : Java refining IN : Java;
+
+
+helper context Java!AnnotationInstance def: getParam(name : String, default : OclAny) : OclAny =
+	if self.parameter.oclIsUndefined() then
+		default
+	else
+		let param : Java!AnnotationParameter = self.parameter.settings->any(e |
+			e.attribute.name = name
+		) in
+		if param.oclIsUndefined() then
+			default
+		else if param.value.oclIsKindOf(Java!ArrayInitializer) then
+			param.value.initialValues->first()
+		else
+			param.value.value
+		endif endif
+	endif;
+
+helper context Java!Method def: retrying : Java!AnnotationInstance =
+	self.annotationsAndModifiers->select(e |
+		e.oclIsKindOf(Java!AnnotationInstance)
+	)->select(e |
+		e.annotation.name = 'RetryOnFailure'
+	)->first();
+
+	
+helper context Java!Method def: isRetrying : Boolean =
+	self.annotationsAndModifiers->select(e |
+		e.oclIsKindOf(Java!AnnotationInstance)
+	)->collect(e |
+		e.annotation.name = 'RetryOnFailure'
+	)->append(false)->first();
+
+
+rule RenameMethod {
+	from
+		s : Java!Method (
+			s.isRetrying
+		)	
+	to
+		t : Java!Method (
+			annotationsAndModifiers <:= s.annotationsAndModifiers->excluding(s.retrying),
+			statements <:= mainBlock
+		),
+			mainBlock : Java!Block (
+				statements <- Sequence{locVarSt, whileLoop}
+			),
+			
+			--- JAVA CODE
+			--- int __retryCount = 0;
+			locVarSt : Java!LocalVariableStatement(
+				variable <- locVar	
+			),
+				locVar : Java!LocalVariable(
+					name <- '__retryCount',
+					typeReference <- intType,
+					initialValue <- initialValue	
+				),
+					intType : Java!Int(),
+					initialValue : Java!DecimalIntegerLiteral(
+						decimalValue <- 0	
+					),
+			--- JAVA CODE
+			--- while (true) {
+			whileLoop : Java!WhileLoop (
+				condition <- tr,
+				statement <- tryBlock1 
+			),
+				tr : Java!BooleanLiteral (
+					value <- true
+				),
+				--- JAVA CODE
+				--- try {
+				---     // the content of the original method
+				--- }
+				tryBlock1 : Java!TryBlock(
+					statements <- s.statements, 
+					catcheBlocks <- Sequence{catchBlock1, catchBlock2} 	
+				),
+				--- JAVA CODE
+				--- catch (UnknownHostException e) {
+				--- 	// added escalation cases
+ 				--- 	throw e;
+ 				--- }
+				catchBlock1 : Java!CatchBlock(
+					statements <- throws1,
+					parameter <- parameter1
+				),
+				    throws1 : Java!Throw(
+				    	throwable <- throwExp1	
+				    ),
+						throwExp1 : Java!IdentifierReference(
+							target <- parameter1	
+						),
+					parameter1 : Java!OrdinaryParameter(
+						name <- 'e',
+						typeReference <- typeRef1
+					),
+						typeRef1 : Java!NamespaceClassifierReference(
+							classifierReferences <- classRef1	
+						),
+							classRef1 : Java!ClassifierReference(
+								target <- s.retrying.getParam('escalate').target					
+							),
+				--- JAVA CODE
+				--- catch (SocketTimeoutException e) {
+				--- // added retry cases
+				--- }
+				catchBlock2 : Java!CatchBlock(
+					parameter <- parameter2,
+					statements <- Sequence{expStatement2,condition3}
+				),
+					parameter2 : Java!OrdinaryParameter(
+						name <- 'e',
+						typeReference <- typeRef2
+					),
+						typeRef2 : Java!NamespaceClassifierReference(
+							classifierReferences <- classRef2	
+						),
+							classRef2 : Java!ClassifierReference(
+								target <- s.retrying.getParam('retry').target
+							),
+					--- JAVA CODE 
+					--- __retryCount += 1;
+					expStatement2 : Java!ExpressionStatement(
+						expression <- exp2 	
+					),
+						exp2 : Java!AssignmentExpression(
+							child <- identRef2,
+							assignmentOperator <- assignOp2,
+							value <- value2
+						),
+							identRef2 : Java!IdentifierReference(
+								target <- locVar
+							),
+							assignOp2 : Java!AssignmentPlus,
+							value2 : Java!DecimalIntegerLiteral(
+								decimalValue <- 1		
+							),
+					--- JAVA CODE
+					--- if (__retryCount > 3) {
+					--- 	throw e;
+					--- }
+					condition3 : Java!Condition (
+						condition <- relExp3,
+						statement <- throws3
+					),
+						throws3 : Java!Throw(
+				    		throwable <- throwExp3	
+				    	),
+							throwExp3 : Java!IdentifierReference(
+								target <- parameter2	
+							),
+						relExp3 : Java!RelationExpression(
+							relationOperators <- relOps3,
+							children <- Sequence {idenRef3, value3}
+						),
+							idenRef3 : Java!IdentifierReference(
+								target <- locVar
+							),
+						
+							relOps3 : Java!GreaterThan,
+							value3 : Java!DecimalIntegerLiteral(
+								decimalValue <- 3 		
+							),
+					--- JAVA CODE
+					--- } else {
+ 					--- 	// added delay
+					--- 	try {
+					--- 		Thread.sleep(1000);
+					--- 	} catch (InterruptedException e1) {
+					--- 		throw e;
+					--- 	}
+					--- }
+					elseStatement : Java!Block(
+						statements <- tryBlock4
+					),
+						tryBlock4 : Java!TryBlock(
+							statements <- expStatement4,
+							catcheBlocks <- catchBlock4
+						),
+							expStatement4 : Java!ExpressionStatement(
+								expression <- exp4	
+							),
+								exp4 : Java!IdentifierReference(
+									--- TODO
+									target <- OclUndefined,
+									next <- methCall4
+								),
+									methCall4 : Java!MethodCall(
+										--- TODO
+										target <- OclUndefined,
+										arguments <- arg4
+									),
+										arg4 : Java!DecimalIntegerLiteral(
+											decimalValue <- 1000	
+										),
+							catchBlock4 : Java!CatchBlock(
+								statements <- throws4,
+								parameter <- parameter4
+							),
+								throws4 : Java!Throw(
+					    			throwable <- throwExp4	
+					    		),
+									throwExp4 : Java!IdentifierReference(
+										--- TODO
+										target <- OclUndefined	
+									),
+									parameter4 : Java!OrdinaryParameter(
+										name <- 'e',
+										typeReference <- typeRef4
+									),
+										typeRef4 : Java!NamespaceClassifierReference(
+											classifierReferences <- classRef4	
+										),
+											classRef4 : Java!ClassifierReference(
+												--- TODO
+												target <- OclUndefined					
+											)							
+}

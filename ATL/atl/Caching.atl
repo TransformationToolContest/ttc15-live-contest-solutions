@@ -1,0 +1,214 @@
+-- @atlcompiler atl2010
+-- @path Java=/ttc15-live-contest-atl/models/java.ecore
+-- Authors: Manuel Wimmer & Frédéric Jouault
+module Logging;
+create OUT : Java refining IN : Java;
+
+helper context Java!Method def: caching : Java!AnnotationInstance =
+	self.annotationsAndModifiers->select(e |
+		e.oclIsKindOf(Java!AnnotationInstance)
+	)->select(e |
+		e.annotation.name = 'Cacheable'
+	)->first();
+
+helper context Java!Method def: isCaching : Boolean =
+	self.annotationsAndModifiers->select(e |
+		e.oclIsKindOf(Java!AnnotationInstance)
+	)->collect(e |
+		e.annotation.name = 'Cacheable'
+	)->append(false)->first();
+
+rule UpdateClass {
+	from
+		s : Java!Class (
+			s.members->select(m | m.oclIsKindOf(Java!Method))->exists(m | m.isCaching)
+		)
+	to
+		t : Java!Class (
+			members <:= Sequence {accessTime, content}->union(s.members)
+		),
+			accessTime : Java!Field (
+				name <- '__getCacheLastAccessed',
+				initialValue <- initialVal,	
+				typeReference <- longType,
+				annotationsAndModifiers <- privateModifier1
+			),
+				longType : Java!Long,
+				initialVal : Java!DecimalLongLiteral(
+					decimalValue <- 0
+				),
+				privateModifier1 : Java!Private,
+			content : Java!Field (
+				name <- '__getCacheContent',
+				initialValue <- initialValue,
+				typeReference <- byteType,
+				arrayDimensionsBefore <- arrayDimension,
+				annotationsAndModifiers <- privateModifier2
+			),
+				byteType : Java!Byte(),
+				arrayDimension : Java!ArrayDimension,
+				initialValue : Java!NullLiteral,
+				privateModifier2 : Java!Private
+}
+
+rule AddCacheToMethod {
+	from
+		s : Java!Method (
+			s.isCaching
+		)
+	using {
+			system : Java!Classifer = 'java.lang.System'.javaClass;
+	}
+	to
+		t : Java!Method (
+			statements <:= s.statements->prepend(condition),
+			annotationsAndModifiers <:= s.annotationsAndModifiers->excluding(s.caching)
+		),
+			-- condition block 
+			condition : Java!Condition (
+				condition <- andExp,
+				statement <- returnCache
+			),	
+				andExp : Java!ConditionalAndExpression(
+					children <- Sequence {relExp, equalExp}
+				),
+					relExp : Java!RelationExpression(
+						relationOperators <- relOps,
+						children <- Sequence {addExp, thousand}
+					),
+						addExp : Java!AdditiveExpression(
+							additiveOperators <- addOps,
+							children <- Sequence {idenRef, idenRef2}
+						),
+							addOps : Java!Subtraction,
+							idenRef : Java!IdentifierReference(
+								target <- system,
+								next <- methCall
+							),
+								methCall : Java!MethodCall(
+									target <- system.getMethod('currentTimeMillis')
+								),
+							idenRef2 : Java!IdentifierReference(
+								target <- thisModule.resolveTemp(s.refImmediateComposite(),	'accessTime')
+							),
+						relOps : Java!LessThan,
+						thousand : Java!DecimalLongLiteral (
+							decimalValue <- 1000
+						),
+
+					equalExp : Java!EqualityExpression(
+						equalityOperators <- equalOp,
+						children <- Sequence{idenRef3, nullLiteral}
+					),
+						equalOp : Java!NotEqual,
+						idenRef3 : Java!IdentifierReference (
+							target <- thisModule.resolveTemp(s.refImmediateComposite(),	'content')
+						),
+						nullLiteral : Java!NullLiteral,
+					
+								
+				returnCache : Java!Return(
+					returnValue <- ref	
+				),
+					ref : Java!IdentifierReference(
+						target <- thisModule.resolveTemp(s.refImmediateComposite(),	'content')
+					)
+						
+					
+}
+
+rule BlockWithReturnToCache {
+	from
+		s : Java!StatementListContainer (
+			if s.method.oclIsUndefined() then
+				false
+			else
+				s.method.isCaching and not s.return.oclIsUndefined()
+			endif
+		)
+	using {
+		returnIndex : Integer = s.statements->indexOf(s.return);
+	}
+	to
+		t : Java!StatementListContainer (
+			-- Remark: there can be only one reachable return statement in a given block, and whatever comes after is unreachable
+			statements <:= s.statements.subSequence(1, returnIndex - 1)
+								->append(assignContent)
+								->append(rememberTime)
+								->union(s.statements.subSequence(returnIndex, s.statements->size()))
+		),
+			assignContent : Java!ExpressionStatement (
+				expression <- assignContentExpr
+			),
+				assignContentExpr : Java!AssignmentExpression (
+					child <- contentRef,
+					assignmentOperator <- assignContentOperator,
+					value <- s.return.returnValue
+				),
+					contentRef : Java!IdentifierReference(
+						target <- thisModule.resolveTemp(s.method.refImmediateComposite(),	'content')
+					),
+					assignContentOperator : Java!Assignment,
+			rememberTime : Java!ExpressionStatement(
+				expression <- rememberTimeExpr
+			),
+				rememberTimeExpr : Java!AssignmentExpression (
+					child <- accessTimeRef,
+					assignmentOperator <- rememberTimeOperator,
+					value <- currentTimeMillis
+				),
+					accessTimeRef : Java!IdentifierReference(
+						target <- thisModule.resolveTemp(s.method.refImmediateComposite(),	'accessTime')
+					),
+					rememberTimeOperator : Java!Assignment,
+						currentTimeMillis : Java!IdentifierReference(
+							target <- 'java.lang.System'.javaClass,
+							next <- methCall
+						),
+							methCall : Java!MethodCall(
+								target <- 'java.lang.System'.javaClass.getMethod('currentTimeMillis')
+							)
+}
+
+rule ReturnToCache {
+	from
+		s : Java!Return (
+			s.method.isCaching
+		)
+	to
+		t : Java!Return (
+			returnValue <- ref
+		),
+			ref : Java!IdentifierReference(
+				target <- thisModule.resolveTemp(s.method.refImmediateComposite(),	'content')
+			)
+}
+
+-- Utils
+helper context String def: javaClass : Java!Classifier =
+	Java!CompilationUnit.allInstancesFrom('IN')->any(e |
+		e.name = self + '.java'
+	).classifiers->first();
+
+helper context Java!Classifier def: getMethod(name : String) : Java!Method =
+	self.members->select(e |
+		e.oclIsKindOf(Java!Method)
+	)->any(e |
+		e.name = name
+	);
+
+-- actual context: Java!Statement or Java!CatchBlock or...
+helper context OclAny def: method : Java!Method =
+	if self.oclIsKindOf(Java!Method) then
+		self
+	else
+		let parent : OclAny = self.refImmediateComposite() in
+		if parent.oclIsUndefined() then
+			OclUndefined
+		else
+			parent.method
+		endif
+	endif;
+
+helper context Java!StatementListContainer def: return : Java!Return =
+	self.statements->select(e | e.oclIsKindOf(Java!Return))->first();
