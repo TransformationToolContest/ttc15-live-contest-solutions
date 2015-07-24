@@ -51,7 +51,7 @@ public class FinalURLDownload {
             } catch (java.net.UnknownHostException e) {
                 __logger.error("get(): exception", e);
                 if (__logger.isWarnEnabled())
-                    __logger.warn("get(): interrupted.);
+                    __logger.warn("get(): interrupted.");
                 
                 throw e;
             } catch (java.net.SocketTimeoutException e) {
@@ -59,7 +59,7 @@ public class FinalURLDownload {
                 __retryCount++;
                 if (__retryCount > 3) {
                     if (__logger.isWarnEnabled())
-                        __logger.warn("get(): interrupted.);
+                        __logger.warn("get(): interrupted.");
                     
                     throw e;
                 } else
@@ -68,7 +68,7 @@ public class FinalURLDownload {
                     } catch (java.lang.InterruptedException e1) {
                         __logger.error("get(): exception", e1);
                         if (__logger.isWarnEnabled())
-                            __logger.warn("get(): interrupted.);
+                            __logger.warn("get(): interrupted.");
                         
                         throw e;
                     }

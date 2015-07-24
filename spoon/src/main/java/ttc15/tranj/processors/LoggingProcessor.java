@@ -131,7 +131,7 @@ public class LoggingProcessor extends AbstractAnnotationProcessor<Loggable, CtMe
 	}
 
 	public String buildWarnLog(CtMethod<?> ctMethod) {
-		return "\"" + ctMethod.getSimpleName() + "(): interrupted.";
+		return "\"" + ctMethod.getSimpleName() + "(): interrupted.\"";
 	}
 
 	public String buildExitLog(CtMethod<?> ctMethod) {
